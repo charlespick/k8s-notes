@@ -1,0 +1,114 @@
+#
+# Graphical relationship diagram:
+#
+# Internet → Ingress (nginx-test.makerland.xyz) → Service (hello-nginx:80) → Pod (nginx container)
+#                ↓                                      ↓                         ↓
+#          TLS termination                        Load balancing               Serves HTML
+#         (cert-manager)                         (selects pods)              (from ConfigMap)
+#
+# Components:
+# - Namespace: Isolates all resources in "demo-nginx" namespace
+# - ConfigMap: Stores the HTML content to be served
+# - Deployment: Manages the nginx pod lifecycle and scaling
+# - Service: Provides stable network endpoint to reach the pod
+# - Ingress: Exposes the service to the internet with SSL/TLS
+#
+---
+apiVersion: v1
+kind: Namespace # Creates an isolated environment to group related resources
+metadata:
+  name: demo-nginx
+---
+apiVersion: apps/v1
+kind: Deployment # A Deployment manages a set of identical pods, ensuring they stay running and can be scaled up/down
+metadata:
+  name: hello-nginx
+  namespace: demo-nginx
+  labels:
+    app: hello-nginx # Label used to identify this deployment - helps organize and select resources
+spec:
+  replicas: 1 # Number of pod copies to run (for high availability, usually set higher)
+  selector:
+    matchLabels:
+      app: hello-nginx # Tells the Deployment which pods it should manage (pods with this label)
+  template:
+    metadata:
+      labels:
+        app: hello-nginx # Labels applied to pods created by this Deployment - must match selector above
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:stable-alpine # Uses the nginx web server with Alpine Linux (lightweight)
+          ports:
+            - containerPort: 80 # Port that nginx listens on inside the container
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html # Replace nginx's default page with our custom HTML
+              subPath: index.html
+          readinessProbe: # Health check - tells Kubernetes when the pod is ready to receive traffic
+            httpGet:
+              path: / # Check the root path
+              port: 80 # On port 80
+            initialDelaySeconds: 2 # Wait 2 seconds before first check
+            periodSeconds: 5 # Check every 5 seconds
+      volumes:
+        - name: html
+          configMap:
+            name: hello-html # References the ConfigMap below that contains our HTML content
+---
+apiVersion: v1
+kind: ConfigMap # Stores configuration data (in this case, our HTML file) separately from the container
+metadata:
+  name: hello-html
+  namespace: demo-nginx
+data:
+  index.html: | # The HTML content that will be served by nginx
+    <!doctype html>
+    <html>
+    <head><title>Hello from nginx</title></head>
+    <body>
+      <h1>Hello from nginx in Kubernetes!</h1>
+      <p>Served by demo-nginx/hello-nginx</p>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service # Provides a stable network endpoint to access pods (even if pods are recreated)
+metadata:
+  name: hello-nginx
+  namespace: demo-nginx
+spec:
+  selector:
+    app: hello-nginx # Tells the Service which pods to route traffic to (pods with this label)
+  ports:
+    - port: 80 # Port exposed by the Service
+      targetPort: 80 # Port on the pod that traffic is forwarded to
+      protocol: TCP
+      name: http
+  type: ClusterIP # Service is only accessible within the cluster (default type)
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress # Exposes HTTP/HTTPS routes from outside the cluster to services within the cluster
+metadata:
+  name: hello-ingress
+  namespace: demo-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx" # Specifies which ingress controller to use
+    cert-manager.io/cluster-issuer: "letsencrypt-dns-cloudflare" # Automatically creates SSL certificates
+spec:
+  ingressClassName: nginx # Modern way to specify ingress controller
+  tls:
+    - hosts:
+        - nginx-test.makerland.xyz # Domain that will have SSL certificate
+      secretName: nginx-hello-tls # Kubernetes secret where the certificate is stored
+  rules:
+    - host: nginx-test.makerland.xyz # Domain name that will route to our service
+      http:
+        paths:
+          - path: / # All paths starting with / (so everything)
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-nginx # Routes to our Service defined above
+                port:
+                  number: 80 # On port 80
