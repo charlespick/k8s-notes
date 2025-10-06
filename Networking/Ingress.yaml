@@ -1,0 +1,33 @@
+# This is a sample of how to setup an Ingress resource for a generic service
+# Adjust the host, service name, and other parameters as needed for your setup
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+ name: longhorn-ui-ingress
+ namespace: longhorn-system # change to the namespace where your service is deployed
+ annotations:
+   kubernetes.io/ingress.class: "nginx"
+   cert-manager.io/cluster-issuer: "letsencrypt-dns" # this should match the name in your ClusterIssuer, get with `microk8s kubectl get clusterissuer`
+   nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+   nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+   nginx.ingress.kubernetes.io/ssl-redirect: "true"
+   nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+ ingressClassName: nginx
+ tls:
+   - hosts:
+       - dev-k8scluster01-longhorn.makerland.xyz # this is where your service will be accessible, set a DNS record, normally a CNAME to the ingress MetalLB IP
+     secretName: dev-k8scluster01-longhorn-makerland-xyz-tls # this will be created by cert-manager, can be any name unique in the namespace
+ rules:
+   - host: dev-k8scluster01-longhorn.makerland.xyz # this should match the host above
+     http:
+       paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: longhorn-frontend # change to your service name, get with `microk8s kubectl get svc -n <namespace>`
+               port:
+                 number: 80
+          # You can add more paths if needed

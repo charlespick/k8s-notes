@@ -1,0 +1,31 @@
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+  namespace: awx
+spec:
+  # Service type for AWX; ClusterIP is correct when fronted by an Ingress
+  service_type: ClusterIP
+
+  # Let the operator create an Ingress for you (alternatively: 'none' to manage your own Ingress)
+  ingress_type: ingress
+
+  # Hostname (single) as accepted by the CRD
+  hostname: awx.makerland.xyz
+
+  # TLS secret name used by the operator when creating the Ingress
+  ingress_tls_secret: awx-tls
+
+  # Optional: specify ingress class name if your CRD supports it (some older operator versions do not)
+  # ingress_class_name: nginx
+
+  # Annotations to add to the created Ingress (mapping form)
+  ingress_annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+  # Storage for the embedded Postgres
+  postgres_storage_class: microk8s-hostpath
+  postgres_storage_requirements:
+    requests:
+      storage: 5Gi
