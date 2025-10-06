@@ -1,0 +1,112 @@
+# -------------------------------------------------------------
+# 1) Namespace for AWX
+# -------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: awx-prod
+# -------------------------------------------------------------
+# 2) SECRETS CREATION
+# -------------------------------------------------------------
+# The secrets required for AWX (PostgreSQL config, admin password, and secret key)
+# are created via an interactive script to avoid storing sensitive data in files.
+#
+# BEFORE applying this YAML file, run:
+#   ./create-awx-secrets.sh
+#
+# This script will prompt you for:
+# - PostgreSQL connection details (host, port, database, username, password)
+# - AWX admin password
+# - Django secret key
+#
+# The script includes helpful hints for each value, such as:
+# - How to find your PostgreSQL service endpoint using kubectl commands
+# - Guidance on database naming conventions
+# - How to generate secure secret keys
+#
+# After running the script, the following secrets will be created:
+# - awx-postgres-configuration (PostgreSQL connection info)
+# - awx-admin-password (AWX admin user password)
+# - awx-secret-key (Django encryption key)
+# -------------------------------------------------------------
+---
+# -------------------------------------------------------------
+# 5) AWX Custom Resource (uses the AWX Operator's CRD)
+#    - apiVersion and kind are the actual AWX Operator CRs: awx.ansible.com/v1beta1, kind: AWX
+#    - postgres_configuration_secret points to the Secret created above
+#    - admin_password_secret and secret_key_secret point to the secrets created above
+#    - web_replicas and task_replicas set to 3 to get 3 web and 3 task pods
+#    - ingress_type: ingress => AWX Operator will create an Ingress resource for you
+#    - hostname: set to your desired FQDN (used in the created Ingress)
+#    - ingress_tls_secret: if you already have a TLS Secret or if cert-manager will provision one
+#
+#    Notes:
+#      * The operator supports many additional settings (resource requests/limits, persistence, extra settings).
+#      * If you want the operator to manage Postgres by itself, remove postgres_configuration_secret and
+#        configure postgres_* settings instead (not covered here since you asked for existing DB).
+# -------------------------------------------------------------
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx-prod
+  namespace: awx-prod
+spec:
+  # point to the pre-created external postgres secret
+  postgres_configuration_secret: awx-postgres-configuration
+
+  # admin credentials & operator secret key (point to the secrets created above)
+  admin_user: admin
+  admin_email: "admin@example.com"
+  admin_password_secret: awx-admin-password
+  secret_key_secret: awx-secret-key
+
+  # replicas
+  # set web_replicas and task_replicas to 3 (operator will create awx-web and awx-task deployments with these replica counts)
+  web_replicas: 3
+  task_replicas: 3
+
+  # networking / ingress
+  # ingress_type: ingress => operator creates an Ingress resource for the AWX service
+  ingress_type: ingress
+  hostname: "awx.example.com"                # <-- change to your FQDN
+  ingress_path: "/"                         # optional (default "/")
+  ingress_path_type: Prefix                 # Path type for ingress rule
+  # If you already have a TLS secret containing certificate+key, set it here.
+  # Otherwise, if you use cert-manager, create a Certificate which uses a ClusterIssuer to
+  # populate a secret and then set ingress_tls_secret to that secret name.
+  ingress_tls_secret: "awx-tls-secret"     # <-- change if you have an existing TLS secret
+
+  # optional ingress annotations (can be used by specific ingress controllers)
+  ingress_annotations: |
+    kubernetes.io/ingress.class: "nginx"
+    # example for cert-manager http01:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+  # optional: service type created for AWX service (operator creates Service)
+  service_type: ClusterIP
+
+  # projects persistence (example)
+  projects_persistence: true
+  projects_storage_class: ""   # leave blank to use cluster default storage class
+  projects_storage_size: 10Gi
+
+  # resource requests/limits examples (adjust to your infra)
+  web_resource_requirements:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1500m"
+      memory: "3Gi"
+  task_resource_requirements:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1500m"
+      memory: "3Gi"
+
+  # Additional settings (example: disable operator-managed postgres since we're using external)
+  postgres_image: ""
+  # Ensure operator will not try to manage postgres for this CR (we provided postgres_configuration_secret).
+  # (No extra flag required — providing postgres_configuration_secret tells operator this DB is external.)

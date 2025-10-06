@@ -1,0 +1,24 @@
+# This is the basics - backup, secrets, and more can be added
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cluster
+  namespace: pgsql-database
+spec:
+  instances: 3
+  
+  postgresql:
+    parameters:
+      max_connections: "200"
+    
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+  
+  storage:
+    size: 10Gi
+    storageClass: "longhorn"
+  
+  monitoring:
+    enabled: true
